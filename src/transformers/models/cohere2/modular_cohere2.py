@@ -338,7 +338,6 @@ class Cohere2DecoderLayer(CohereDecoderLayer):
         attention_mask: Optional[torch.Tensor] = None,
         past_key_value: Optional[Cache] = None,
         output_attentions: Optional[bool] = False,
-        use_cache: Optional[bool] = False,
         cache_position: Optional[torch.LongTensor] = None,
         **kwargs: Unpack[FlashAttentionKwargs],
     ) -> Tuple[torch.FloatTensor, Optional[Tuple[torch.FloatTensor, torch.FloatTensor]]]:
@@ -355,9 +354,6 @@ class Cohere2DecoderLayer(CohereDecoderLayer):
             output_attentions (`bool`, *optional*):
                 Whether or not to return the attentions tensors of all attention layers. See `attentions` under
                 returned tensors for more detail.
-            use_cache (`bool`, *optional*):
-                If set to `True`, `past_key_values` key value states are returned and can be used to speed up decoding
-                (see `past_key_values`).
             cache_position (`torch.LongTensor` of shape `(sequence_length)`, *optional*):
                 Indices depicting the position of the input sequence tokens in the sequence
         """
@@ -387,7 +383,6 @@ class Cohere2DecoderLayer(CohereDecoderLayer):
             attention_mask=attention_mask,
             past_key_value=past_key_value,
             output_attentions=output_attentions,
-            use_cache=use_cache,
             cache_position=cache_position,
             **kwargs,
         )
@@ -496,8 +491,8 @@ class Cohere2Model(Gemma2Model):
                     causal_mask,
                     past_key_values,
                     output_attentions,
-                    use_cache,
                     cache_position,
+                    **flash_attn_kwargs,
                 )
             else:
                 layer_outputs = decoder_layer(
@@ -506,7 +501,6 @@ class Cohere2Model(Gemma2Model):
                     attention_mask=causal_mask,
                     past_key_value=past_key_values,
                     output_attentions=output_attentions,
-                    use_cache=use_cache,
                     cache_position=cache_position,
                     **flash_attn_kwargs,
                 )

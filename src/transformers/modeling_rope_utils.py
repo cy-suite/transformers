@@ -58,7 +58,11 @@ def _compute_default_rope_parameters(
     elif config is not None:
         base = config.rope_theta
         partial_rotary_factor = config.partial_rotary_factor if hasattr(config, "partial_rotary_factor") else 1.0
+        print(f"partial_rotary_factor = {partial_rotary_factor}")  # DEBUG!
         head_dim = getattr(config, "head_dim", config.hidden_size // config.num_attention_heads)
+        print(
+            f"head_dim = {head_dim}, hidden_size = {config.hidden_size}, num_attention_heads = {config.num_attention_heads}"
+        )  # DEBUG!
         dim = int(head_dim * partial_rotary_factor)
 
     attention_factor = 1.0  # Unused in this type of RoPE
@@ -155,7 +159,8 @@ def _compute_dynamic_ntk_parameters(
     seq_len = seq_len if seq_len is not None and seq_len > max_position_embeddings else max_position_embeddings
 
     # Compute the inverse frequencies
-    base = base * ((factor * seq_len / max_position_embeddings) - (factor - 1)) ** (dim / (dim - 2))
+    if dim != 2:
+        base = base * ((factor * seq_len / max_position_embeddings) - (factor - 1)) ** (dim / (dim - 2))
     inv_freq = 1.0 / (base ** (torch.arange(0, dim, 2, dtype=torch.int64).float().to(device) / dim))
     return inv_freq, attention_factor
 
@@ -230,7 +235,7 @@ def _compute_yarn_parameters(
     low, high = find_correction_range(beta_fast, beta_slow, dim, base, max_position_embeddings)
 
     # Get n-dimensional rotational scaling corrected for extrapolation
-    inv_freq_extrapolation_factor = 1 - linear_ramp_factor(low, high, dim // 2).float().to(device)
+    inv_freq_extrapolation_factor = 1 - linear_ramp_factor(low, high, pos_freqs.shape[0]).float().to(device)
     inv_freq = (
         inv_freq_interpolation * (1 - inv_freq_extrapolation_factor)
         + inv_freq_extrapolation * inv_freq_extrapolation_factor
