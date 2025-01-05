@@ -43,6 +43,7 @@ if is_torch_available():
         ModernBertForMaskedLM,
         ModernBertForSequenceClassification,
         ModernBertForTokenClassification,
+        ModernBertForQuestionAnswering,
         ModernBertModel,
         logging,
     )
@@ -225,6 +226,7 @@ class ModernBertModelTest(ModelTesterMixin, GenerationTesterMixin, PipelineTeste
             ModernBertForMaskedLM,
             ModernBertForSequenceClassification,
             ModernBertForTokenClassification,
+            ModernBertForQuestionAnswering,
         )
         if is_torch_available()
         else ()
@@ -237,6 +239,7 @@ class ModernBertModelTest(ModelTesterMixin, GenerationTesterMixin, PipelineTeste
             "text-classification": ModernBertForSequenceClassification,
             "token-classification": ModernBertForTokenClassification,
             "zero-shot": ModernBertForSequenceClassification,
+            "question-answering": ModernBertForQuestionAnswering,
         }
         if is_torch_available()
         else {}
