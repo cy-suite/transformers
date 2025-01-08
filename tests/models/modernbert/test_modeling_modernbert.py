@@ -41,9 +41,9 @@ if is_torch_available():
     from transformers import (
         MODEL_FOR_PRETRAINING_MAPPING,
         ModernBertForMaskedLM,
+        ModernBertForQuestionAnswering,
         ModernBertForSequenceClassification,
         ModernBertForTokenClassification,
-        ModernBertForQuestionAnswering,
         ModernBertModel,
         logging,
     )
