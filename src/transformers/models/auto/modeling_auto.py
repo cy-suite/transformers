@@ -1127,6 +1127,7 @@ MODEL_FOR_QUESTION_ANSWERING_MAPPING_NAMES = OrderedDict(
         ("xlnet", "XLNetForQuestionAnsweringSimple"),
         ("xmod", "XmodForQuestionAnswering"),
         ("yoso", "YosoForQuestionAnswering"),
+        ("modernbert", "ModernBertForQuestionAnswering"),
     ]
 )
 
