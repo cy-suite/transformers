@@ -146,6 +146,7 @@ class GraniteMoeConfig(PretrainedConfig):
         num_experts_per_tok=2,
         output_router_logits=False,
         router_aux_loss_coef=0.001,
+        shared_intermediate_size=0,
         **kwargs,
     ):
         self.vocab_size = vocab_size
@@ -179,6 +180,7 @@ class GraniteMoeConfig(PretrainedConfig):
         self.num_experts_per_tok = num_experts_per_tok
         self.output_router_logits = output_router_logits
         self.router_aux_loss_coef = router_aux_loss_coef
+        self.shared_intermediate_size = shared_intermediate_size
 
         super().__init__(
             pad_token_id=pad_token_id,

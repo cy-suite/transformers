@@ -400,6 +400,32 @@ class GraniteMoeMoE(nn.Module):
         return layer_output, router_logits
 
 
+class GraniteMoeSharedMLP(nn.Module):
+    """
+    MLP layer for shared experts
+
+    Args:
+        config:
+            Configuration object with model hyperparameters.
+    """
+
+    def __init__(self, config: GraniteMoeConfig):
+        super(GraniteMoeMoE, self).__init__()
+
+        self.input_size = config.hidden_size
+        self.hidden_size = config.shared_intermediate_size
+        self.activation = ACT2FN[config.hidden_act]
+        self.input_linear = nn.Linear(self.input_size, self.hidden_size, self.hidden_size * 2)
+        self.output_linear = GraniteMoeParallelExperts(self.hidden_size, self.input_size, self.input_size)
+
+    def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
+        hidden_states = self.input_linear(hidden_states)
+        chunked_hidden_states = hidden_states.chunk(2, dim=-1)
+        hidden_states = self.activation(chunked_hidden_states[0]) * chunked_hidden_states[1]
+        hidden_states = self.output_linear(hidden_states)
+        return hidden_states
+
+
 # Copied from transformers.models.granite.modeling_granite.repeat_kv with Granite->GraniteMoe
 def repeat_kv(hidden_states: torch.Tensor, n_rep: int) -> torch.Tensor:
     """
@@ -727,6 +753,7 @@ class GraniteMoeDecoderLayer(nn.Module):
         self.self_attn = GRANITEMOE_ATTENTION_CLASSES[config._attn_implementation](config=config, layer_idx=layer_idx)
 
         self.block_sparse_moe = GraniteMoeMoE(config)
+        self.shared_mlp = None if config.shared_intermediate_size == 0 else GraniteMoeSharedMLP(config)
         self.input_layernorm = GraniteMoeRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
         self.post_attention_layernorm = GraniteMoeRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
 
@@ -792,7 +819,15 @@ class GraniteMoeDecoderLayer(nn.Module):
         # Fully Connected
         residual = hidden_states
         hidden_states = self.post_attention_layernorm(hidden_states)
-        hidden_states, router_logits = self.block_sparse_moe(hidden_states)
+        moe_hidden_states, router_logits = self.block_sparse_moe(hidden_states)
+
+        if self.shared_mlp is None:
+            hidden_states = moe_hidden_states
+        else:
+            mlp_hidden_states = hidden_states + self.shared_mlp(hidden_states)
+            hidden_states = moe_hidden_states + mlp_hidden_states
+
+        del moe_hidden_states, mlp_hidden_states
 
         hidden_states = residual + hidden_states * self.residual_multiplier
 
