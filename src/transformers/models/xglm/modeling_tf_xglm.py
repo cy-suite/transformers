@@ -490,8 +490,9 @@ class TFXGLMMainLayer(keras.layers.Layer):
     def get_input_embeddings(self) -> TFSharedEmbeddings:
         return self.embed_tokens
 
-    def set_input_embeddings(self, value: TFSharedEmbeddings) -> None:
-        self.embed_tokens = value
+    def set_input_embeddings(self, value: tf.Variable) -> None:
+        self.embed_tokens.vocab_size = value.shape[0]
+        self.embed_tokens.weight = value
 
     def _prepare_decoder_attention_mask(
         self,
