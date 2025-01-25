@@ -889,8 +889,17 @@ class TFXGLMForCausalLM(TFXGLMPreTrainedModel, TFCausalLanguageModelingLoss):
     def get_output_embeddings(self):
         return self.lm_head
 
-    def set_output_embeddings(self, new_embeddings):
-        self.lm_head = new_embeddings
+    def set_output_embeddings(self, value):
+        self.lm_head = keras.layers.Dense(
+            shape_list(value)[0],
+            use_bias=False,
+            kernel_initializer=get_initializer(self.config.init_std),
+            name="lm_head",
+        )
+        # in a dense layer the kernel has a shape (last_dim, units), for us (dim, num_tokens)
+        # value has a shape (num_tokens, dim) then needs to be transposed
+        transposed_value = tf.transpose(value)
+        self.lm_head.kernel = tf.Variable(transposed_value)
 
     def prepare_inputs_for_generation(self, inputs, past_key_values=None, use_cache=None, **kwargs):
         # only last token for inputs_ids if past is defined in kwargs
