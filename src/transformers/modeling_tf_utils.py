@@ -2077,6 +2077,12 @@ class TFPreTrainedModel(keras.Model, TFModelUtilsMixin, TFGenerationMixin, PushT
         if embeds is not None:
             return embeds
 
+        embeds = getattr(embedding_layer, "kernel", None)
+        if embeds is not None:
+            # in a dense layer the kernel has a shape (last_dim, units), for us (dim, num_tokens)
+            # value has a shape (num_tokens, dim) then needs to be transposed
+            return tf.Variable(tf.transpose(embeds))
+
         # The reason why the attributes don't exist might be
         # because the model is not built, so retry getting
         # the argument after building the model
@@ -2089,6 +2095,12 @@ class TFPreTrainedModel(keras.Model, TFModelUtilsMixin, TFGenerationMixin, PushT
         embeds = getattr(embedding_layer, "decoder", None)
         if embeds is not None:
             return embeds
+
+        embeds = getattr(embedding_layer, "kernel", None)
+        if embeds is not None:
+            # in a dense layer the kernel has a shape (last_dim, units), for us (dim, num_tokens)
+            # value has a shape (num_tokens, dim) then needs to be transposed
+            return tf.Variable(tf.transpose(embeds))
 
         return None
 

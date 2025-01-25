@@ -1352,9 +1352,7 @@ class TFT5ForConditionalGeneration(TFT5PreTrainedModel, TFCausalLanguageModeling
         if self.config.tie_word_embeddings:
             return self.get_input_embeddings()
         else:
-            # in a dense layer the kernel has a shape (last_dim, units), for us (dim, num_tokens)
-            # value has a shape (num_tokens, dim) then needs to be transposed
-            return tf.transpose(self.lm_head.kernel)
+            return self.lm_head
 
     def set_output_embeddings(self, value):
         if self.config.tie_word_embeddings:
@@ -1367,7 +1365,7 @@ class TFT5ForConditionalGeneration(TFT5PreTrainedModel, TFCausalLanguageModeling
             # in a dense layer the kernel has a shape (last_dim, units), for us (dim, num_tokens)
             # value has a shape (num_tokens, dim) then needs to be transposed
             transposed_value = tf.transpose(value)
-            self.lm_head.kernel = transposed_value
+            self.lm_head.kernel = tf.Variable(transposed_value)
 
     def get_encoder(self):
         return self.encoder
