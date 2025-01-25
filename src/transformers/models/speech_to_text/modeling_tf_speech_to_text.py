@@ -992,8 +992,9 @@ class TFSpeech2TextDecoder(keras.layers.Layer):
     def get_embed_tokens(self):
         return self.embed_tokens
 
-    def set_embed_tokens(self, embed_tokens):
-        self.embed_tokens = embed_tokens
+    def set_embed_tokens(self, value):
+        self.embed_tokens.vocab_size = value.shape[0]
+        self.embed_tokens.weight = value
 
     @unpack_inputs
     def call(
@@ -1211,8 +1212,9 @@ class TFSpeech2TextMainLayer(keras.layers.Layer):
     def get_input_embeddings(self):
         return self.decoder.embed_tokens
 
-    def set_input_embeddings(self, new_embeddings):
-        self.decoder.embed_tokens = new_embeddings
+    def set_input_embeddings(self, value):
+        self.decoder.embed_tokens.vocab_size = value.shape[0]
+        self.decoder.embed_tokens.weight = value
 
     @unpack_inputs
     def call(
