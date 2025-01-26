@@ -415,8 +415,8 @@ class GraniteMoeSharedMLP(nn.Module):
         self.input_size = config.hidden_size
         self.hidden_size = config.shared_intermediate_size
         self.activation = ACT2FN[config.hidden_act]
-        self.input_linear = nn.Linear(self.input_size, self.hidden_size, self.hidden_size * 2)
-        self.output_linear = GraniteMoeParallelExperts(self.hidden_size, self.input_size, self.input_size)
+        self.input_linear = nn.Linear(self.input_size, self.hidden_size * 2, bias=False)
+        self.output_linear = nn.Linear(self.hidden_size, self.input_size, bias=False)
 
     def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
         hidden_states = self.input_linear(hidden_states)
