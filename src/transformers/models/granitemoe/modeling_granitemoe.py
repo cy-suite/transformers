@@ -823,12 +823,10 @@ class GraniteMoeDecoderLayer(nn.Module):
 
         if self.shared_mlp is None:
             hidden_states = moe_hidden_states
-            mlp_hidden_states = None
         else:
-            mlp_hidden_states = self.shared_mlp(hidden_states)
-            hidden_states = moe_hidden_states + mlp_hidden_states
+            hidden_states = moe_hidden_states + self.shared_mlp(hidden_states)
 
-        del moe_hidden_states, mlp_hidden_states
+        del moe_hidden_states
 
         hidden_states = residual + hidden_states * self.residual_multiplier
 
