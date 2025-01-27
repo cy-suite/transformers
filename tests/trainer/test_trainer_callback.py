@@ -410,7 +410,8 @@ class TrainerCallbackTest(unittest.TestCase):
         # warning should be emitted for not-present callbacks
         with patch("transformers.trainer.logger.warning") as warn_mock:
             trainer.train(resume_from_checkpoint=checkpoint)
-            assert "EarlyStoppingCallback" in warn_mock.call_args[0][0]
+            print("warn_mock.call_args = ", warn_mock.call_args)
+            assert "EarlyStoppingCallback" in [warn_mock.call_args[0][0] or warn_mock.call_args[0][1]]
 
     def test_stateful_control(self):
         trainer = self.get_trainer(
