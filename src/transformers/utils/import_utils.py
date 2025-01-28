@@ -199,6 +199,7 @@ _tiktoken_available = _is_package_available("tiktoken")
 _blobfile_available = _is_package_available("blobfile")
 _liger_kernel_available = _is_package_available("liger_kernel")
 _triton_available = _is_package_available("triton")
+_matplotlib_available = _is_package_available("matplotlib")
 
 _torch_version = "N/A"
 _torch_available = False
@@ -1282,6 +1283,10 @@ def is_liger_kernel_available():
 
 def is_triton_available():
     return _triton_available
+
+
+def is_matplotlib_available():
+    return _matplotlib_available
 
 
 # docstyle-ignore
