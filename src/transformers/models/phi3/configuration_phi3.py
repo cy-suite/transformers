@@ -15,6 +15,8 @@
 
 """Phi-3 model configuration"""
 
+import math
+
 from ...configuration_utils import PretrainedConfig
 from ...utils import logging
 
@@ -210,7 +212,8 @@ class Phi3Config(PretrainedConfig):
             raise ValueError(
                 f"`rope_scaling`'s short_factor field must be a list of numbers, got {rope_scaling_short_factor}"
             )
-        if not len(rope_scaling_short_factor) == self.hidden_size // self.num_attention_heads // 2:
+        required_size = int(math.ceil((self.hidden_size // self.num_attention_heads) / 2))
+        if not len(rope_scaling_short_factor) == required_size:
             raise ValueError(
                 f"`rope_scaling`'s short_factor field must have length {self.hidden_size // self.num_attention_heads // 2}, got {len(rope_scaling_short_factor)}"
             )
@@ -221,7 +224,7 @@ class Phi3Config(PretrainedConfig):
             raise ValueError(
                 f"`rope_scaling`'s long_factor field must be a list of numbers, got {rope_scaling_long_factor}"
             )
-        if not len(rope_scaling_long_factor) == self.hidden_size // self.num_attention_heads // 2:
+        if not len(rope_scaling_long_factor) == required_size:
             raise ValueError(
                 f"`rope_scaling`'s long_factor field must have length {self.hidden_size // self.num_attention_heads // 2}, got {len(rope_scaling_long_factor)}"
             )

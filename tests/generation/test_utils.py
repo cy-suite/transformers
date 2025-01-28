@@ -155,7 +155,7 @@ class GenerationTesterMixin:
     def _check_similar_generate_outputs(self, output_1, output_2, atol=1e-5, rtol=1e-5):
         """
         Checks whether a pair of generate outputs are similar. Two `generate` call outputs are considered similar in
-        the following siturations:
+        the following situations:
         1. The sequences are the same
         2. The sequences are different, but the scores up to (and including) the first mismatch are nearly identical
         """
