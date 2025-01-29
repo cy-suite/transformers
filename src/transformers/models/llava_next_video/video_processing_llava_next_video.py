@@ -18,7 +18,7 @@ from typing import Dict, List, Optional, Union
 
 import numpy as np
 
-from ...image_processing_utils import BaseImageProcessor, BatchFeature, get_size_dict
+from ...image_processing_utils import BatchFeature, get_size_dict
 from ...image_transforms import (
     convert_to_rgb,
     get_resize_output_image_size,
@@ -34,12 +34,13 @@ from ...image_utils import (
     VideoInput,
     infer_channel_dimension_format,
     is_scaled_image,
-    is_valid_image,
     make_list_of_images,
+    make_list_of_videos,
     to_numpy_array,
     validate_preprocess_arguments,
 )
 from ...utils import TensorType, is_vision_available, logging
+from ...video_processing_utils import BaseVideoProcessor
 
 
 logger = logging.get_logger(__name__)
@@ -49,23 +50,7 @@ if is_vision_available():
     from PIL import Image
 
 
-def make_batched_videos(videos) -> List[VideoInput]:
-    if isinstance(videos, (list, tuple)) and isinstance(videos[0], (list, tuple)) and is_valid_image(videos[0][0]):
-        return videos
-
-    elif isinstance(videos, (list, tuple)) and is_valid_image(videos[0]):
-        if isinstance(videos[0], Image.Image):
-            return [videos]
-        elif len(videos[0].shape) == 4:
-            return [list(video) for video in videos]
-
-    elif is_valid_image(videos) and len(videos.shape) == 4:
-        return [list(videos)]
-
-    raise ValueError(f"Could not make batched video from {videos}")
-
-
-class LlavaNextVideoImageProcessor(BaseImageProcessor):
+class LlavaNextVideoVideoProcessor(BaseVideoProcessor):
     r"""
     Constructs a LLaVa-NeXT-Video video processor. Based on [`CLIPImageProcessor`] with incorporation of processing each video frame.
 
@@ -275,18 +260,16 @@ class LlavaNextVideoImageProcessor(BaseImageProcessor):
         all_images = []
         for image in images:
             if do_resize:
-                image = self.resize(image=image, size=size, resample=resample, input_data_format=input_data_format)
+                image = self.resize(image, size=size, resample=resample, input_data_format=input_data_format)
 
             if do_center_crop:
-                image = self.center_crop(image=image, size=crop_size, input_data_format=input_data_format)
+                image = self.center_crop(image, size=crop_size, input_data_format=input_data_format)
 
             if do_rescale:
-                image = self.rescale(image=image, scale=rescale_factor, input_data_format=input_data_format)
+                image = self.rescale(image, scale=rescale_factor, input_data_format=input_data_format)
 
             if do_normalize:
-                image = self.normalize(
-                    image=image, mean=image_mean, std=image_std, input_data_format=input_data_format
-                )
+                image = self.normalize(image, mean=image_mean, std=image_std, input_data_format=input_data_format)
 
             all_images.append(image)
         images = [
@@ -298,7 +281,7 @@ class LlavaNextVideoImageProcessor(BaseImageProcessor):
 
     def preprocess(
         self,
-        images: VideoInput,
+        videos: VideoInput,
         do_resize: bool = None,
         size: Dict[str, int] = None,
         resample: PILImageResampling = None,
@@ -316,9 +299,9 @@ class LlavaNextVideoImageProcessor(BaseImageProcessor):
     ):
         """
         Args:
-            images (`VideoInput`):
+            videos (`VideoInput`):
                 Videos to preprocess. Expects a single or batch of videos with pixel values ranging from 0 to 255. If
-                passing in images with pixel values between 0 and 1, set `do_rescale=False`.
+                passing in videos with pixel values between 0 and 1, set `do_rescale=False`.
             do_resize (`bool`, *optional*, defaults to `self.do_resize`):
                 Whether to resize the video.
             size (`Dict[str, int]`, *optional*, defaults to `self.size`):
@@ -351,17 +334,17 @@ class LlavaNextVideoImageProcessor(BaseImageProcessor):
                 - `TensorType.PYTORCH` or `'pt'`: Return a batch of type `torch.Tensor`.
                 - `TensorType.NUMPY` or `'np'`: Return a batch of type `np.ndarray`.
                 - `TensorType.JAX` or `'jax'`: Return a batch of type `jax.numpy.ndarray`.
-            data_format (`ChannelDimension` or `str`, *optional*, defaults to `ChannelDimension.FIRST`):
-                The channel dimension format for the output image. Can be one of:
-                - `"channels_first"` or `ChannelDimension.FIRST`: image in (num_channels, height, width) format.
-                - `"channels_last"` or `ChannelDimension.LAST`: image in (height, width, num_channels) format.
-                - Unset: Use the channel dimension format of the input image.
+            data_format (`str` or `ChannelDimension`, *optional*):
+                The channel dimension format for the output video. If unset, the channel dimension format of the input
+                video is used. Can be one of:
+                - `"channels_first"` or `ChannelDimension.FIRST`: video in (num_frames, num_channels, height, width) format.
+                - `"channels_last"` or `ChannelDimension.LAST`: video in (num_frames, height, width, num_channels) format.
             input_data_format (`ChannelDimension` or `str`, *optional*):
-                The channel dimension format for the input image. If unset, the channel dimension format is inferred
-                from the input image. Can be one of:
-                - `"channels_first"` or `ChannelDimension.FIRST`: image in (num_channels, height, width) format.
-                - `"channels_last"` or `ChannelDimension.LAST`: image in (height, width, num_channels) format.
-                - `"none"` or `ChannelDimension.NONE`: image in (height, width) format.
+                The channel dimension format for the input video. If unset, the channel dimension format is inferred
+                from the input video. Can be one of:
+                - `"channels_first"` or `ChannelDimension.FIRST`: video in (num_frames, num_channels, height, width) format.
+                - `"channels_last"` or `ChannelDimension.LAST`: video in (num_frames, height, width, num_channels) format.
+                - `"none"` or `ChannelDimension.NONE`: video in (num_frames, height, width) format.
         """
         do_resize = do_resize if do_resize is not None else self.do_resize
         size = size if size is not None else self.size
@@ -377,7 +360,7 @@ class LlavaNextVideoImageProcessor(BaseImageProcessor):
         image_std = image_std if image_std is not None else self.image_std
         do_convert_rgb = do_convert_rgb if do_convert_rgb is not None else self.do_convert_rgb
 
-        images = make_batched_videos(images)
+        videos = make_list_of_videos(videos)
 
         validate_preprocess_arguments(
             do_rescale=do_rescale,
@@ -409,11 +392,13 @@ class LlavaNextVideoImageProcessor(BaseImageProcessor):
                 data_format=data_format,
                 input_data_format=input_data_format,
             )
-            for frames in images
+            for frames in videos
         ]
 
         data = {"pixel_values_videos": pixel_values}
         return BatchFeature(data=data, tensor_type=return_tensors)
 
 
-__all__ = ["LlavaNextVideoImageProcessor"]
+# TODO (raushan): can be removed after v5 release. Kept for backwards compatibility
+LlavaNextVideoImageProcessor = LlavaNextVideoVideoProcessor
+__all__ = ["LlavaNextVideoImageProcessor", "LlavaNextVideoVideoProcessor"]

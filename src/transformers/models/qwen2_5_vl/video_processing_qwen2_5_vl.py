@@ -17,61 +17,79 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""Fast Image processor class for Qwen2-VL."""
+"""video processor class for Qwen2-5-VL."""
 
+import math
 from typing import Dict, List, Optional, Union
 
+import numpy as np
+
 from ...image_processing_utils import BatchFeature
-from ...image_processing_utils_fast import (
-    BaseImageProcessorFast,
-)
 from ...image_transforms import (
     convert_to_rgb,
+    resize,
+    to_channel_dimension_format,
 )
 from ...image_utils import (
     OPENAI_CLIP_MEAN,
     OPENAI_CLIP_STD,
     ChannelDimension,
     ImageInput,
-    ImageType,
     PILImageResampling,
     VideoInput,
     get_image_size,
-    get_image_type,
     infer_channel_dimension_format,
+    is_scaled_image,
     make_list_of_images,
-    valid_images,
+    make_list_of_videos,
+    to_numpy_array,
     validate_preprocess_arguments,
 )
-from ...utils import (
-    TensorType,
-    is_torch_available,
-    is_torchvision_available,
-    is_torchvision_v2_available,
-    is_vision_available,
-    logging,
-)
-from .image_processing_qwen2_vl import make_batched_images, smart_resize
+from ...utils import TensorType, is_vision_available, logging
+from ...video_processing_utils import BaseVideoProcessor
 
-
-if is_torch_available():
-    import torch
-
-if is_vision_available():
-    from ...image_utils import pil_torch_interpolation_mapping
-
-
-if is_torchvision_v2_available():
-    from torchvision.transforms.v2 import functional as F
-elif is_torchvision_available():
-    from torchvision.transforms import functional as F
 
 logger = logging.get_logger(__name__)
 
 
-class Qwen2VLImageProcessorFast(BaseImageProcessorFast):
+if is_vision_available():
+    pass
+
+
+def smart_resize(
+    height: int, width: int, factor: int = 28, min_pixels: int = 56 * 56, max_pixels: int = 14 * 14 * 4 * 1280
+):
+    """Rescales the video so that the following conditions are met:
+
+    1. Both dimensions (height and width) are divisible by 'factor'.
+
+    2. The total number of pixels is within the range ['min_pixels', 'max_pixels'].
+
+    3. The aspect ratio of the video is maintained as closely as possible.
+
+    """
+    if height < factor or width < factor:
+        raise ValueError(f"height:{height} or width:{width} must be larger than factor:{factor}")
+    elif max(height, width) / min(height, width) > 200:
+        raise ValueError(
+            f"absolute aspect ratio must be smaller than 200, got {max(height, width) / min(height, width)}"
+        )
+    h_bar = round(height / factor) * factor
+    w_bar = round(width / factor) * factor
+    if h_bar * w_bar > max_pixels:
+        beta = math.sqrt((height * width) / max_pixels)
+        h_bar = math.floor(height / beta / factor) * factor
+        w_bar = math.floor(width / beta / factor) * factor
+    elif h_bar * w_bar < min_pixels:
+        beta = math.sqrt(min_pixels / (height * width))
+        h_bar = math.ceil(height * beta / factor) * factor
+        w_bar = math.ceil(width * beta / factor) * factor
+    return h_bar, w_bar
+
+
+class Qwen2_5_VLVideoProcessor(BaseVideoProcessor):
     r"""
-    Constructs a fast Qwen2-VL image processor that dynamically resizes images based on the original images.
+    Constructs a Qwen2.5-VL video processor that dynamically resizes vides based on the original video sizes.
 
     Args:
         do_resize (`bool`, *optional*, defaults to `True`):
@@ -102,7 +120,7 @@ class Qwen2VLImageProcessorFast(BaseImageProcessorFast):
             The merge size of the vision encoder to llm encoder.
     """
 
-    model_input_names = ["pixel_values", "image_grid_thw", "pixel_values_videos", "video_grid_thw"]
+    model_input_names = ["pixel_values_videos", "video_grid_thw", "second_per_grid_ts"]
 
     def __init__(
         self,
@@ -150,10 +168,9 @@ class Qwen2VLImageProcessorFast(BaseImageProcessorFast):
         do_convert_rgb: bool = None,
         data_format: Optional[ChannelDimension] = ChannelDimension.FIRST,
         input_data_format: Optional[Union[str, ChannelDimension]] = None,
-        device: Optional[Union[str, torch.device]] = None,
     ):
         """
-        Preprocess an image or batch of images. Copy of the `preprocess` method from `CLIPImageProcessor`.
+        Preprocess an video or batch of images. Copy of the `preprocess` method from `CLIPImageProcessor`.
 
         Args:
             images (`ImageInput`):
@@ -191,32 +208,20 @@ class Qwen2VLImageProcessorFast(BaseImageProcessorFast):
 
         if do_convert_rgb:
             images = [convert_to_rgb(image) for image in images]
-        image_type = get_image_type(images[0])
-        if image_type == ImageType.PIL:
-            images = [F.pil_to_tensor(image) for image in images]
-        elif image_type == ImageType.NUMPY:
-            # not using F.to_tensor as it doesn't handle (C, H, W) numpy arrays
-            images = [torch.from_numpy(image).contiguous() for image in images]
 
-        if device is not None:
-            images = [image.to(device) for image in images]
+        # All transformations expect numpy arrays.
+        images = [to_numpy_array(image) for image in images]
 
-        # We assume that all images have the same channel dimension format.
+        if is_scaled_image(images[0]) and do_rescale:
+            logger.warning_once(
+                "It looks like you are trying to rescale already rescaled images. If the input"
+                " images have pixel values between 0 and 1, set `do_rescale=False` to avoid rescaling them again."
+            )
         if input_data_format is None:
+            # We assume that all images have the same channel dimension format.
             input_data_format = infer_channel_dimension_format(images[0])
-        if input_data_format == ChannelDimension.LAST:
-            images = [image.permute(2, 0, 1).contiguous() for image in images]
-            input_data_format = ChannelDimension.FIRST
-
-        if do_rescale and do_normalize:
-            # fused rescale and normalize
-            image_mean = torch.tensor(image_mean, device=images[0].device) * (1.0 / rescale_factor)
-            image_std = torch.tensor(image_std, device=images[0].device) * (1.0 / rescale_factor)
 
         height, width = get_image_size(images[0], channel_dim=input_data_format)
-        interpolation = (
-            pil_torch_interpolation_mapping[resample] if isinstance(resample, (PILImageResampling, int)) else resample
-        )
         resized_height, resized_width = height, width
         processed_images = []
         for image in images:
@@ -228,28 +233,28 @@ class Qwen2VLImageProcessorFast(BaseImageProcessorFast):
                     min_pixels=self.min_pixels,
                     max_pixels=self.max_pixels,
                 )
-                image = F.resize(image, size=(resized_height, resized_width), interpolation=interpolation)
+                image = resize(
+                    image, size=(resized_height, resized_width), resample=resample, input_data_format=input_data_format
+                )
 
-            if do_rescale and do_normalize:
-                # fused rescale and normalize
-                image = F.normalize(image.to(dtype=torch.float32), image_mean, image_std)
-            elif do_rescale:
-                image = image * rescale_factor
-            elif do_normalize:
-                image = F.normalize(image, image_mean, image_std)
+            if do_rescale:
+                image = self.rescale(image, scale=rescale_factor, input_data_format=input_data_format)
 
+            if do_normalize:
+                image = self.normalize(image, mean=image_mean, std=image_std, input_data_format=input_data_format)
+
+            image = to_channel_dimension_format(image, data_format, input_channel_dim=input_data_format)
             processed_images.append(image)
 
-        patches = torch.stack(processed_images)
-        if patches.shape[0] % self.temporal_patch_size != 0:
-            repeats = patches[-1].unsqueeze(0).repeat(self.temporal_patch_size - 1, 1, 1, 1)
-            patches = torch.cat([patches, repeats], dim=0)
-
+        patches = np.array(processed_images)
+        if data_format == ChannelDimension.LAST:
+            patches = patches.transpose(0, 3, 1, 2)
+        if patches.shape[0] == 1:
+            patches = np.tile(patches, (self.temporal_patch_size, 1, 1, 1))
         channel = patches.shape[1]
         grid_t = patches.shape[0] // self.temporal_patch_size
         grid_h, grid_w = resized_height // self.patch_size, resized_width // self.patch_size
-
-        patches = patches.view(
+        patches = patches.reshape(
             grid_t,
             self.temporal_patch_size,
             channel,
@@ -260,7 +265,7 @@ class Qwen2VLImageProcessorFast(BaseImageProcessorFast):
             self.merge_size,
             self.patch_size,
         )
-        patches = patches.permute(0, 3, 6, 4, 7, 2, 1, 5, 8)
+        patches = patches.transpose(0, 3, 6, 4, 7, 2, 1, 5, 8)
         flatten_patches = patches.reshape(
             grid_t * grid_h * grid_w, channel * self.temporal_patch_size * self.patch_size * self.patch_size
         )
@@ -269,7 +274,6 @@ class Qwen2VLImageProcessorFast(BaseImageProcessorFast):
 
     def preprocess(
         self,
-        images: ImageInput,
         videos: VideoInput = None,
         do_resize: bool = None,
         size: Dict[str, int] = None,
@@ -283,37 +287,33 @@ class Qwen2VLImageProcessorFast(BaseImageProcessorFast):
         return_tensors: Optional[Union[str, TensorType]] = None,
         data_format: Optional[ChannelDimension] = ChannelDimension.FIRST,
         input_data_format: Optional[Union[str, ChannelDimension]] = None,
-        **kwargs,
     ):
         """
         Args:
-            images (`ImageInput`):
-                Image to preprocess. Expects a single or batch of images with pixel values ranging from 0 to 255. If
-                passing in images with pixel values between 0 and 1, set `do_rescale=False`.
             videos (`VideoInput`):
                 Video to preprocess. Expects a single or batch of videos with pixel values ranging from 0 to 255. If
                 passing in videos with pixel values between 0 and 1, set `do_rescale=False`.
             do_resize (`bool`, *optional*, defaults to `self.do_resize`):
-                Whether to resize the image.
+                Whether to resize the video.
             size (`Dict[str, int]`, *optional*, defaults to `self.size`):
-                Size of the image after resizing. Shortest edge of the image is resized to size["shortest_edge"], with
+                Size of the video after resizing. Shortest edge of the video is resized to size["shortest_edge"], with
                 the longest edge resized to keep the input aspect ratio.
             resample (`int`, *optional*, defaults to `self.resample`):
-                Resampling filter to use if resizing the image. This can be one of the enum `PILImageResampling`. Only
+                Resampling filter to use if resizing the video. This can be one of the enum `PILImageResampling`. Only
                 has an effect if `do_resize` is set to `True`.
             do_rescale (`bool`, *optional*, defaults to `self.do_rescale`):
-                Whether to rescale the image.
+                Whether to rescale the video.
             rescale_factor (`float`, *optional*, defaults to `self.rescale_factor`):
-                Rescale factor to rescale the image by if `do_rescale` is set to `True`.
+                Rescale factor to rescale the video by if `do_rescale` is set to `True`.
             do_normalize (`bool`, *optional*, defaults to `self.do_normalize`):
-                Whether to normalize the image.
+                Whether to normalize the video.
             image_mean (`float` or `List[float]`, *optional*, defaults to `self.image_mean`):
-                Image mean to use for normalization. Only has an effect if `do_normalize` is set to `True`.
+                video mean to use for normalization. Only has an effect if `do_normalize` is set to `True`.
             image_std (`float` or `List[float]`, *optional*, defaults to `self.image_std`):
-                Image standard deviation to use for normalization. Only has an effect if `do_normalize` is set to
+                video standard deviation to use for normalization. Only has an effect if `do_normalize` is set to
                 `True`.
             do_convert_rgb (`bool`, *optional*, defaults to `self.do_convert_rgb`):
-                Whether to convert the image to RGB.
+                Whether to convert the video to RGB.
             return_tensors (`str` or `TensorType`, *optional*):
                 The type of tensors to return. Can be one of:
                 - Unset: Return a list of `np.ndarray`.
@@ -321,17 +321,17 @@ class Qwen2VLImageProcessorFast(BaseImageProcessorFast):
                 - `TensorType.PYTORCH` or `'pt'`: Return a batch of type `torch.Tensor`.
                 - `TensorType.NUMPY` or `'np'`: Return a batch of type `np.ndarray`.
                 - `TensorType.JAX` or `'jax'`: Return a batch of type `jax.numpy.ndarray`.
-            data_format (`ChannelDimension` or `str`, *optional*, defaults to `ChannelDimension.FIRST`):
-                The channel dimension format for the output image. Can be one of:
-                - `"channels_first"` or `ChannelDimension.FIRST`: image in (num_channels, height, width) format.
-                - `"channels_last"` or `ChannelDimension.LAST`: image in (height, width, num_channels) format.
-                - Unset: Use the channel dimension format of the input image.
+            data_format (`str` or `ChannelDimension`, *optional*):
+                The channel dimension format for the output video. If unset, the channel dimension format of the input
+                video is used. Can be one of:
+                - `"channels_first"` or `ChannelDimension.FIRST`: video in (num_frames, num_channels, height, width) format.
+                - `"channels_last"` or `ChannelDimension.LAST`: video in (num_frames, height, width, num_channels) format.
             input_data_format (`ChannelDimension` or `str`, *optional*):
-                The channel dimension format for the input image. If unset, the channel dimension format is inferred
-                from the input image. Can be one of:
-                - `"channels_first"` or `ChannelDimension.FIRST`: image in (num_channels, height, width) format.
-                - `"channels_last"` or `ChannelDimension.LAST`: image in (height, width, num_channels) format.
-                - `"none"` or `ChannelDimension.NONE`: image in (height, width) format.
+                The channel dimension format for the input video. If unset, the channel dimension format is inferred
+                from the input video. Can be one of:
+                - `"channels_first"` or `ChannelDimension.FIRST`: video in (num_frames, num_channels, height, width) format.
+                - `"channels_last"` or `ChannelDimension.LAST`: video in (num_frames, height, width, num_channels) format.
+                - `"none"` or `ChannelDimension.NONE`: video in (num_frames, height, width) format.
 
         """
         do_resize = do_resize if do_resize is not None else self.do_resize
@@ -343,20 +343,8 @@ class Qwen2VLImageProcessorFast(BaseImageProcessorFast):
         image_mean = image_mean if image_mean is not None else self.image_mean
         image_std = image_std if image_std is not None else self.image_std
         do_convert_rgb = do_convert_rgb if do_convert_rgb is not None else self.do_convert_rgb
-        device = kwargs.pop("device", None)
 
-        # Make hashable for cache
-        image_mean = tuple(image_mean) if isinstance(image_mean, list) else image_mean
-        image_std = tuple(image_std) if isinstance(image_std, list) else image_std
-
-        if images is not None:
-            images = make_batched_images(images)
-
-        if images is not None and not valid_images(images):
-            raise ValueError(
-                "Invalid image type. Must be of type PIL.Image.Image, numpy.ndarray, "
-                "torch.Tensor, tf.Tensor or jax.ndarray."
-            )
+        videos = make_list_of_videos(videos)
 
         validate_preprocess_arguments(
             rescale_factor=rescale_factor,
@@ -368,60 +356,28 @@ class Qwen2VLImageProcessorFast(BaseImageProcessorFast):
             resample=resample,
         )
 
-        data = {}
-        if images is not None:
-            pixel_values, vision_grid_thws = [], []
-            for image in images:
-                patches, image_grid_thw = self._preprocess(
-                    image,
-                    do_resize=do_resize,
-                    resample=resample,
-                    do_rescale=do_rescale,
-                    rescale_factor=rescale_factor,
-                    do_normalize=do_normalize,
-                    image_mean=image_mean,
-                    image_std=image_std,
-                    data_format=data_format,
-                    do_convert_rgb=do_convert_rgb,
-                    input_data_format=input_data_format,
-                    device=device,
-                )
-                pixel_values.extend(patches)
-                vision_grid_thws.append(image_grid_thw)
-            pixel_values = torch.stack(pixel_values)
-            vision_grid_thws = torch.tensor(vision_grid_thws)
-            data.update({"pixel_values": pixel_values, "image_grid_thw": vision_grid_thws})
-
-        # kept for BC only and should be removed after v5.0
-        if videos is not None:
-            logger.warning(
-                "`Qwen2VLImageProcessorFast` works only with image inputs and doesn't process videos anymore. "
-                "This is a deprecated behavior and will be removed in v5.0. "
-                "Your videos should be forwarded to `Qwen2VLVideoProcessor`. "
+        pixel_values, vision_grid_thws = [], []
+        for frames in videos:
+            patches, video_grid_thw = self._preprocess(
+                frames,
+                do_resize=do_resize,
+                resample=resample,
+                do_rescale=do_rescale,
+                rescale_factor=rescale_factor,
+                do_normalize=do_normalize,
+                image_mean=image_mean,
+                image_std=image_std,
+                data_format=data_format,
+                do_convert_rgb=do_convert_rgb,
+                input_data_format=input_data_format,
             )
-            pixel_values_videos, vision_grid_thws_videos = [], []
-            for images in videos:
-                patches, video_grid_thw = self._preprocess(
-                    images,
-                    do_resize=do_resize,
-                    resample=resample,
-                    do_rescale=do_rescale,
-                    rescale_factor=rescale_factor,
-                    do_normalize=do_normalize,
-                    image_mean=image_mean,
-                    image_std=image_std,
-                    data_format=data_format,
-                    do_convert_rgb=do_convert_rgb,
-                    input_data_format=input_data_format,
-                    device=device,
-                )
-                pixel_values_videos.extend(patches)
-                vision_grid_thws_videos.append(video_grid_thw)
-            pixel_values_videos = torch.stack(pixel_values_videos)
-            vision_grid_thws_videos = torch.tensor(vision_grid_thws_videos)
-            data.update({"pixel_values_videos": pixel_values, "video_grid_thw": vision_grid_thws_videos})
+            pixel_values.extend(patches)
+            vision_grid_thws.append(video_grid_thw)
+        pixel_values = np.array(pixel_values)
+        vision_grid_thws = np.array(vision_grid_thws)
+        data = {"pixel_values_videos": pixel_values, "video_grid_thw": vision_grid_thws}
 
         return BatchFeature(data=data, tensor_type=return_tensors)
 
 
-__all__ = ["Qwen2VLImageProcessorFast"]
+__all__ = ["Qwen2_5_VLVideoProcessor"]

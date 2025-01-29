@@ -338,6 +338,13 @@ class InstructBlipVideoImageProcessor(metaclass=DummyObject):
         requires_backends(self, ["vision"])
 
 
+class InstructBlipVideoVideoProcessor(metaclass=DummyObject):
+    _backends = ["vision"]
+
+    def __init__(self, *args, **kwargs):
+        requires_backends(self, ["vision"])
+
+
 class LayoutLMv2FeatureExtractor(metaclass=DummyObject):
     _backends = ["vision"]
 
@@ -395,6 +402,13 @@ class LlavaNextImageProcessor(metaclass=DummyObject):
 
 
 class LlavaNextVideoImageProcessor(metaclass=DummyObject):
+    _backends = ["vision"]
+
+    def __init__(self, *args, **kwargs):
+        requires_backends(self, ["vision"])
+
+
+class LlavaNextVideoVideoProcessor(metaclass=DummyObject):
     _backends = ["vision"]
 
     def __init__(self, *args, **kwargs):
@@ -576,7 +590,21 @@ class Qwen2_5_VLImageProcessor(metaclass=DummyObject):
         requires_backends(self, ["vision"])
 
 
+class Qwen2_5_VLVideoProcessor(metaclass=DummyObject):
+    _backends = ["vision"]
+
+    def __init__(self, *args, **kwargs):
+        requires_backends(self, ["vision"])
+
+
 class Qwen2VLImageProcessor(metaclass=DummyObject):
+    _backends = ["vision"]
+
+    def __init__(self, *args, **kwargs):
+        requires_backends(self, ["vision"])
+
+
+class Qwen2VLVideoProcessor(metaclass=DummyObject):
     _backends = ["vision"]
 
     def __init__(self, *args, **kwargs):
@@ -661,6 +689,13 @@ class TvpImageProcessor(metaclass=DummyObject):
 
 
 class VideoLlavaImageProcessor(metaclass=DummyObject):
+    _backends = ["vision"]
+
+    def __init__(self, *args, **kwargs):
+        requires_backends(self, ["vision"])
+
+
+class VideoLlavaVideoProcessor(metaclass=DummyObject):
     _backends = ["vision"]
 
     def __init__(self, *args, **kwargs):
@@ -752,6 +787,13 @@ class YolosImageProcessor(metaclass=DummyObject):
 
 
 class ZoeDepthImageProcessor(metaclass=DummyObject):
+    _backends = ["vision"]
+
+    def __init__(self, *args, **kwargs):
+        requires_backends(self, ["vision"])
+
+
+class BaseVideoProcessor(metaclass=DummyObject):
     _backends = ["vision"]
 
     def __init__(self, *args, **kwargs):

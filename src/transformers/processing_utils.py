@@ -69,6 +69,7 @@ AUTO_TO_BASE_CLASS_MAPPING = {
     "AutoTokenizer": "PreTrainedTokenizerBase",
     "AutoFeatureExtractor": "FeatureExtractionMixin",
     "AutoImageProcessor": "ImageProcessingMixin",
+    "AutoVideoProcessor": "BaseVideoProcessor",
 }
 
 if sys.version_info >= (3, 11):
@@ -476,6 +477,8 @@ class ProcessorMixin(PushToHubMixin):
             del output["tokenizer"]
         if "image_processor" in output:
             del output["image_processor"]
+        if "video_processor" in output:
+            del output["video_processor"]
         if "feature_extractor" in output:
             del output["feature_extractor"]
         if "chat_template" in output:

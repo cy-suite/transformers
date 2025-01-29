@@ -255,6 +255,7 @@ class ImageProcessingMixin(PushToHubMixin):
             custom_object_save(self, save_directory, config=self)
 
         # If we save using the predefined names, we can load using `from_pretrained`
+        # NOTE: save with the new naming by default with "image_" prefix
         output_image_processor_file = os.path.join(save_directory, IMAGE_PROCESSOR_NAME)
 
         self.to_json_file(output_image_processor_file)
@@ -326,8 +327,7 @@ class ImageProcessingMixin(PushToHubMixin):
 
         pretrained_model_name_or_path = str(pretrained_model_name_or_path)
         is_local = os.path.isdir(pretrained_model_name_or_path)
-        if os.path.isdir(pretrained_model_name_or_path):
-            image_processor_file = os.path.join(pretrained_model_name_or_path, image_processor_filename)
+
         if os.path.isfile(pretrained_model_name_or_path):
             resolved_image_processor_file = pretrained_model_name_or_path
             is_local = True
@@ -335,9 +335,11 @@ class ImageProcessingMixin(PushToHubMixin):
             image_processor_file = pretrained_model_name_or_path
             resolved_image_processor_file = download_url(pretrained_model_name_or_path)
         else:
-            image_processor_file = image_processor_filename
             try:
-                # Load from local folder or from cache or download from model Hub and cache
+                # Try to load with an new config name first and if not successfull try with
+                # the old file name. In case we can load only with old name, raise warning.
+                # Deprecated until v5.0
+                image_processor_file = image_processor_filename
                 resolved_image_processor_file = cached_file(
                     pretrained_model_name_or_path,
                     image_processor_file,
@@ -350,6 +352,27 @@ class ImageProcessingMixin(PushToHubMixin):
                     user_agent=user_agent,
                     revision=revision,
                     subfolder=subfolder,
+                )
+            except EnvironmentError:
+                image_processor_file = "preprocessor_config.json"
+                resolved_image_processor_file = cached_file(
+                    pretrained_model_name_or_path,
+                    image_processor_file,
+                    cache_dir=cache_dir,
+                    force_download=force_download,
+                    proxies=proxies,
+                    resume_download=resume_download,
+                    local_files_only=local_files_only,
+                    token=token,
+                    user_agent=user_agent,
+                    revision=revision,
+                    subfolder=subfolder,
+                )
+                logger.warning_once(
+                    "You have image processor config saved in `preprocessor.json` file which is deprecated. "
+                    "Image processor configs should be saved in their own `image_preprocessor.json` file. You can rename "
+                    "the file or load and save the processor back which renames it automatically. "
+                    "Loading from `preprocessor.json` will be removed in v5.0."
                 )
             except EnvironmentError:
                 # Raise any environment error raise by `cached_file`. It will have a helpful error message adapted to

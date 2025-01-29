@@ -43,15 +43,12 @@ from ...image_utils import (
     is_scaled_image,
     is_valid_image,
     make_list_of_images,
+    make_list_of_videos,
     to_numpy_array,
     valid_images,
     validate_preprocess_arguments,
 )
-from ...utils import TensorType, is_vision_available, logging
-
-
-if is_vision_available():
-    from PIL import Image
+from ...utils import TensorType, logging
 
 
 logger = logging.get_logger(__name__)
@@ -78,22 +75,6 @@ def make_batched_images(images) -> List[List[ImageInput]]:
         return [images]
 
     raise ValueError(f"Could not make batched images from {images}")
-
-
-def make_batched_videos(videos) -> List[VideoInput]:
-    if isinstance(videos, (list, tuple)) and isinstance(videos[0], (list, tuple)) and is_valid_image(videos[0][0]):
-        return videos
-
-    elif isinstance(videos, (list, tuple)) and is_valid_image(videos[0]):
-        if isinstance(videos[0], Image.Image):
-            return [videos]
-        elif len(videos[0].shape) == 4:
-            return [list(video) for video in videos]
-
-    elif is_valid_image(videos) and len(videos.shape) == 4:
-        return [list(videos)]
-
-    raise ValueError(f"Could not make batched video from {videos}")
 
 
 def smart_resize(
@@ -399,8 +380,6 @@ class Qwen2_5_VLImageProcessor(BaseImageProcessor):
 
         if images is not None:
             images = make_batched_images(images)
-        if videos is not None:
-            videos = make_batched_videos(videos)
 
         if images is not None and not valid_images(images):
             raise ValueError(
@@ -418,6 +397,7 @@ class Qwen2_5_VLImageProcessor(BaseImageProcessor):
             resample=resample,
         )
 
+        data = {}
         if images is not None:
             pixel_values, vision_grid_thws = [], []
             for image in images:
@@ -438,10 +418,17 @@ class Qwen2_5_VLImageProcessor(BaseImageProcessor):
                 vision_grid_thws.append(image_grid_thw)
             pixel_values = np.array(pixel_values)
             vision_grid_thws = np.array(vision_grid_thws)
-            data = {"pixel_values": pixel_values, "image_grid_thw": vision_grid_thws}
+            data.update({"pixel_values": pixel_values, "image_grid_thw": vision_grid_thws})
 
+        # kept for BC only and should be removed after v5.0
         if videos is not None:
-            pixel_values, vision_grid_thws = [], []
+            logger.warning(
+                "`Qwen2_5_VLImageProcessor` works only with image inputs and doesn't process videos anymore. "
+                "This is a deprecated behavior and will be removed in v5.0. "
+                "Your videos should be forwarded to `Qwen2_5_VLVideoProcessor`. "
+            )
+            videos = make_list_of_videos(videos)
+            pixel_values_videos, vision_grid_thws_videos = [], []
             for images in videos:
                 patches, video_grid_thw = self._preprocess(
                     images,
@@ -456,11 +443,14 @@ class Qwen2_5_VLImageProcessor(BaseImageProcessor):
                     do_convert_rgb=do_convert_rgb,
                     input_data_format=input_data_format,
                 )
-                pixel_values.extend(patches)
-                vision_grid_thws.append(video_grid_thw)
-            pixel_values = np.array(pixel_values)
-            vision_grid_thws = np.array(vision_grid_thws)
-            data = {"pixel_values_videos": pixel_values, "video_grid_thw": vision_grid_thws}
+                pixel_values_videos.extend(patches)
+                vision_grid_thws_videos.append(video_grid_thw)
+            data.update(
+                {
+                    "pixel_values_videos": np.array(pixel_values_videos),
+                    "video_grid_thw": np.array(vision_grid_thws_videos),
+                }
+            )
 
         return BatchFeature(data=data, tensor_type=return_tensors)
 

@@ -16,7 +16,7 @@
 
 from typing import Dict, List, Optional, Union
 
-from ...image_processing_utils import BaseImageProcessor, BatchFeature, get_size_dict
+from ...image_processing_utils import BatchFeature, get_size_dict
 from ...image_transforms import (
     convert_to_rgb,
     resize,
@@ -31,12 +31,13 @@ from ...image_utils import (
     VideoInput,
     infer_channel_dimension_format,
     is_scaled_image,
-    is_valid_image,
+    make_list_of_videos,
     to_numpy_array,
     valid_images,
     validate_preprocess_arguments,
 )
 from ...utils import TensorType, is_vision_available, logging
+from ...video_processing_utils import BaseVideoProcessor
 
 
 logger = logging.get_logger(__name__)
@@ -46,23 +47,7 @@ if is_vision_available():
     from PIL import Image
 
 
-def make_batched_videos(videos) -> List[VideoInput]:
-    if isinstance(videos, (list, tuple)) and isinstance(videos[0], (list, tuple)) and is_valid_image(videos[0][0]):
-        return videos
-
-    elif isinstance(videos, (list, tuple)) and is_valid_image(videos[0]):
-        if isinstance(videos[0], Image.Image) or len(videos[0].shape) == 3:
-            return [videos]
-        elif len(videos[0].shape) == 4:
-            return [list(video) for video in videos]
-
-    elif is_valid_image(videos) and len(videos.shape) == 4:
-        return [list(videos)]
-
-    raise ValueError(f"Could not make batched video from {videos}")
-
-
-class LlavaOnevisionVideoProcessor(BaseImageProcessor):
+class LlavaOnevisionVideoProcessor(BaseVideoProcessor):
     r"""
     Constructs a LLaVa-Onevisino-Video video processor. Based on [`SiglipImageProcessor`] with incorporation of processing each video frame.
 
@@ -193,19 +178,17 @@ class LlavaOnevisionVideoProcessor(BaseImageProcessor):
 
         if do_resize:
             images = [
-                resize(image=image, size=size, resample=resample, input_data_format=input_data_format)
-                for image in images
+                resize(image, size=size, resample=resample, input_data_format=input_data_format) for image in images
             ]
 
         if do_rescale:
             images = [
-                self.rescale(image=image, scale=rescale_factor, input_data_format=input_data_format)
-                for image in images
+                self.rescale(image, scale=rescale_factor, input_data_format=input_data_format) for image in images
             ]
 
         if do_normalize:
             images = [
-                self.normalize(image=image, mean=image_mean, std=image_std, input_data_format=input_data_format)
+                self.normalize(image, mean=image_mean, std=image_std, input_data_format=input_data_format)
                 for image in images
             ]
 
@@ -234,28 +217,28 @@ class LlavaOnevisionVideoProcessor(BaseImageProcessor):
         """
         Args:
             videos (`np.ndarray`, `torch.Tensor`, `List[np.ndarray]`, `List[torch.Tensor]`):
-                The image or batch of videos to be prepared. Each video can be a 4D NumPy array or PyTorch
+                The video or batch of videos to be prepared. Each video can be a 4D NumPy array or PyTorch
             do_resize (`bool`, *optional*, defaults to `self.do_resize`):
-                Whether to resize the image.
+                Whether to resize the video.
             size (`Dict[str, int]`, *optional*, defaults to `self.size`):
-                Size of the image after resizing. Shortest edge of the image is resized to size["shortest_edge"], with
+                Size of the video after resizing. Shortest edge of the video is resized to size["shortest_edge"], with
                 the longest edge resized to keep the input aspect ratio.
             resample (`int`, *optional*, defaults to `self.resample`):
-                Resampling filter to use if resizing the image. This can be one of the enum `PILImageResampling`. Only
+                Resampling filter to use if resizing the video. This can be one of the enum `PILImageResampling`. Only
                 has an effect if `do_resize` is set to `True`.
             do_rescale (`bool`, *optional*, defaults to `self.do_rescale`):
-                Whether to rescale the image.
+                Whether to rescale the video.
             rescale_factor (`float`, *optional*, defaults to `self.rescale_factor`):
-                Rescale factor to rescale the image by if `do_rescale` is set to `True`.
+                Rescale factor to rescale the video by if `do_rescale` is set to `True`.
             do_normalize (`bool`, *optional*, defaults to `self.do_normalize`):
-                Whether to normalize the image.
+                Whether to normalize the video.
             image_mean (`float` or `List[float]`, *optional*, defaults to `self.image_mean`):
                 Image mean to use for normalization. Only has an effect if `do_normalize` is set to `True`.
             image_std (`float` or `List[float]`, *optional*, defaults to `self.image_std`):
                 Image standard deviation to use for normalization. Only has an effect if `do_normalize` is set to
                 `True`.
             do_convert_rgb (`bool`, *optional*, defaults to `self.do_convert_rgb`):
-                Whether to convert the image to RGB.
+                Whether to convert the video to RGB.
             return_tensors (`str` or `TensorType`, *optional*):
                 The type of tensors to return. Can be one of:
                 - Unset: Return a list of `np.ndarray`.
@@ -263,17 +246,17 @@ class LlavaOnevisionVideoProcessor(BaseImageProcessor):
                 - `TensorType.PYTORCH` or `'pt'`: Return a batch of type `torch.Tensor`.
                 - `TensorType.NUMPY` or `'np'`: Return a batch of type `np.ndarray`.
                 - `TensorType.JAX` or `'jax'`: Return a batch of type `jax.numpy.ndarray`.
-            data_format (`ChannelDimension` or `str`, *optional*, defaults to `ChannelDimension.FIRST`):
-                The channel dimension format for the output image. Can be one of:
-                - `"channels_first"` or `ChannelDimension.FIRST`: image in (num_channels, height, width) format.
-                - `"channels_last"` or `ChannelDimension.LAST`: image in (height, width, num_channels) format.
-                - Unset: Use the channel dimension format of the input image.
+            data_format (`str` or `ChannelDimension`, *optional*):
+                The channel dimension format for the output video. If unset, the channel dimension format of the input
+                video is used. Can be one of:
+                - `"channels_first"` or `ChannelDimension.FIRST`: video in (num_frames, num_channels, height, width) format.
+                - `"channels_last"` or `ChannelDimension.LAST`: video in (num_frames, height, width, num_channels) format.
             input_data_format (`ChannelDimension` or `str`, *optional*):
-                The channel dimension format for the input image. If unset, the channel dimension format is inferred
-                from the input image. Can be one of:
-                - `"channels_first"` or `ChannelDimension.FIRST`: image in (num_channels, height, width) format.
-                - `"channels_last"` or `ChannelDimension.LAST`: image in (height, width, num_channels) format.
-                - `"none"` or `ChannelDimension.NONE`: image in (height, width) format.
+                The channel dimension format for the input video. If unset, the channel dimension format is inferred
+                from the input video. Can be one of:
+                - `"channels_first"` or `ChannelDimension.FIRST`: video in (num_frames, num_channels, height, width) format.
+                - `"channels_last"` or `ChannelDimension.LAST`: video in (num_frames, height, width, num_channels) format.
+                - `"none"` or `ChannelDimension.NONE`: video in (num_frames, height, width) format.
 
         """
         do_resize = do_resize if do_resize is not None else self.do_resize
@@ -286,7 +269,7 @@ class LlavaOnevisionVideoProcessor(BaseImageProcessor):
         image_std = image_std if image_std is not None else self.image_std
         do_convert_rgb = do_convert_rgb if do_convert_rgb is not None else self.do_convert_rgb
 
-        videos = make_batched_videos(videos)
+        videos = make_list_of_videos(videos)
 
         if not valid_images(videos[0]):
             raise ValueError(
