@@ -25,12 +25,7 @@ from torch import nn
 from ...activations import ACT2FN
 from ...modeling_outputs import BackboneOutput, BaseModelOutput
 from ...modeling_utils import PreTrainedModel
-from ...utils import (
-    add_start_docstrings,
-    add_start_docstrings_to_model_forward,
-    logging,
-    replace_return_docstrings,
-)
+from ...utils import add_start_docstrings, add_start_docstrings_to_model_forward, logging, replace_return_docstrings
 from ...utils.backbone_utils import BackboneMixin
 from .configuration_vitdet import VitDetConfig
 
@@ -456,8 +451,15 @@ class VitDetLayer(nn.Module):
         super().__init__()
 
         dim = config.hidden_size
-        input_size = (config.image_size // config.patch_size, config.image_size // config.patch_size)
 
+        if isinstance(config.image_size, tuple) and isinstance(config.patch_size, tuple):
+            input_size = tuple(i // p for i, p in zip(config.image_size, config.patch_size))
+        elif isinstance(config.image_size, tuple) and not isinstance(config.patch_size, tuple):
+            input_size = tuple(i // config.patch_size for i in config.image_size)
+        elif not isinstance(config.image_size, tuple) and isinstance(config.patch_size, tuple):
+            input_size = tuple(config.image_size // p for p in config.patch_size)
+        else:
+            input_size = config.image_size // config.patch_size
         self.norm1 = nn.LayerNorm(dim, eps=config.layer_norm_eps)
         self.attention = VitDetAttention(
             config, input_size=input_size if window_size == 0 else (window_size, window_size)
