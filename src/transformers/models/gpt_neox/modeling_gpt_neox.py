@@ -1051,6 +1051,7 @@ class GPTNeoXForCausalLM(GPTNeoXPreTrainedModel, GenerationMixin):
         output_hidden_states: Optional[bool] = None,
         return_dict: Optional[bool] = None,
         cache_position: Optional[torch.LongTensor] = None,
+        **kwargs,
     ) -> Union[Tuple, CausalLMOutputWithPast]:
         r"""
         labels (`torch.LongTensor` of shape `(batch_size, sequence_length)`, *optional*):
@@ -1105,8 +1106,12 @@ class GPTNeoXForCausalLM(GPTNeoXPreTrainedModel, GenerationMixin):
             # we are doing next-token prediction; shift prediction scores and input ids by one
             shift_logits = lm_logits[:, :-1, :].contiguous()
             labels = labels[:, 1:].contiguous()
-            loss_fct = CrossEntropyLoss()
-            lm_loss = loss_fct(shift_logits.view(-1, shift_logits.size(-1)), labels.view(-1))
+            lm_loss = self.loss_function(
+                shift_logits.view(-1, shift_logits.size(-1)),
+                labels.view(-1),
+                vocab_size=self.config.vocab_size,
+                **kwargs,
+            )
 
         if not return_dict:
             output = (lm_logits,) + outputs[1:]
