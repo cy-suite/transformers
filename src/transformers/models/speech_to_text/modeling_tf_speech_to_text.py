@@ -992,8 +992,9 @@ class TFSpeech2TextDecoder(keras.layers.Layer):
     def get_embed_tokens(self):
         return self.embed_tokens
 
-    def set_embed_tokens(self, embed_tokens):
-        self.embed_tokens = embed_tokens
+    def set_embed_tokens(self, value):
+        self.embed_tokens.vocab_size = value.shape[0]
+        self.embed_tokens.weight = value
 
     @unpack_inputs
     def call(
@@ -1211,8 +1212,9 @@ class TFSpeech2TextMainLayer(keras.layers.Layer):
     def get_input_embeddings(self):
         return self.decoder.embed_tokens
 
-    def set_input_embeddings(self, new_embeddings):
-        self.decoder.embed_tokens = new_embeddings
+    def set_input_embeddings(self, value):
+        self.decoder.embed_tokens.vocab_size = value.shape[0]
+        self.decoder.embed_tokens.weight = value
 
     @unpack_inputs
     def call(
@@ -1429,8 +1431,12 @@ class TFSpeech2TextForConditionalGeneration(TFSpeech2TextPreTrainedModel, TFCaus
     def get_output_embeddings(self):
         return self.lm_head
 
-    def set_output_embeddings(self, new_embeddings):
-        self.lm_head = new_embeddings
+    def set_output_embeddings(self, value):
+        self.lm_head = keras.layers.Dense(shape_list(value)[0], use_bias=False, name="lm_head")
+        # in a dense layer the kernel has a shape (last_dim, units), for us (dim, num_tokens)
+        # value has a shape (num_tokens, dim) then needs to be transposed
+        transposed_value = tf.transpose(value)
+        self.lm_head.kernel = tf.Variable(transposed_value)
 
     @unpack_inputs
     @add_start_docstrings_to_model_forward(SPEECH_TO_TEXT_INPUTS_DOCSTRING)

@@ -490,8 +490,9 @@ class TFXGLMMainLayer(keras.layers.Layer):
     def get_input_embeddings(self) -> TFSharedEmbeddings:
         return self.embed_tokens
 
-    def set_input_embeddings(self, value: TFSharedEmbeddings) -> None:
-        self.embed_tokens = value
+    def set_input_embeddings(self, value: tf.Variable) -> None:
+        self.embed_tokens.vocab_size = value.shape[0]
+        self.embed_tokens.weight = value
 
     def _prepare_decoder_attention_mask(
         self,
@@ -888,8 +889,17 @@ class TFXGLMForCausalLM(TFXGLMPreTrainedModel, TFCausalLanguageModelingLoss):
     def get_output_embeddings(self):
         return self.lm_head
 
-    def set_output_embeddings(self, new_embeddings):
-        self.lm_head = new_embeddings
+    def set_output_embeddings(self, value):
+        self.lm_head = keras.layers.Dense(
+            shape_list(value)[0],
+            use_bias=False,
+            kernel_initializer=get_initializer(self.config.init_std),
+            name="lm_head",
+        )
+        # in a dense layer the kernel has a shape (last_dim, units), for us (dim, num_tokens)
+        # value has a shape (num_tokens, dim) then needs to be transposed
+        transposed_value = tf.transpose(value)
+        self.lm_head.kernel = tf.Variable(transposed_value)
 
     def prepare_inputs_for_generation(self, inputs, past_key_values=None, use_cache=None, **kwargs):
         # only last token for inputs_ids if past is defined in kwargs
@@ -969,7 +979,7 @@ class TFXGLMForCausalLM(TFXGLMPreTrainedModel, TFCausalLanguageModelingLoss):
         if labels is not None:
             # shift labels to the left and cut last logit token
             labels = tf.concat(
-                [labels[:, 1:], tf.fill((labels.shape[0], 1), tf.cast(self.config.pad_token_id, labels.dtype))],
+                [labels[:, 1:], tf.fill((labels.shape[0], 1), tf.cast(-100, labels.dtype))],
                 axis=-1,
             )
             loss = self.hf_compute_loss(labels, lm_logits)

@@ -778,10 +778,10 @@ class XGLMForCausalLM(XGLMPreTrainedModel, GenerationMixin):
 
         loss = None
         if labels is not None:
-            # shift labels and add a pad token to the end
+            # shift labels to the left and cut last logit token
             shift_labels = labels.new_zeros(labels.shape)
             shift_labels[:, :-1] = labels[:, 1:].clone()
-            shift_labels[:, -1] = self.config.pad_token_id
+            shift_labels[:, -1] = -100
 
             loss_fct = CrossEntropyLoss()
             loss = loss_fct(logits.view(-1, self.config.vocab_size), shift_labels.view(-1))
