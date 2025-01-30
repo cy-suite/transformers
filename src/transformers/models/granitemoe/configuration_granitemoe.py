@@ -100,6 +100,8 @@ class GraniteMoeConfig(PretrainedConfig):
             Whether or not the router logits should be returned by the model. Enabeling this will also
             allow the model to output the auxiliary loss.
         router_aux_loss_coef (`float`, *optional*, defaults to 0.001): router auxialiary loss coefficient
+        shared_intermediate_size (`int`, *optional*, defaults to 0): intermediate size for shared experts. 0 implies
+            no shared experts.
 
     ```python
     >>> from transformers import GraniteMoeModel, GraniteMoeConfig
@@ -146,6 +148,7 @@ class GraniteMoeConfig(PretrainedConfig):
         num_experts_per_tok=2,
         output_router_logits=False,
         router_aux_loss_coef=0.001,
+        shared_intermediate_size=0,
         **kwargs,
     ):
         self.vocab_size = vocab_size
@@ -179,6 +182,7 @@ class GraniteMoeConfig(PretrainedConfig):
         self.num_experts_per_tok = num_experts_per_tok
         self.output_router_logits = output_router_logits
         self.router_aux_loss_coef = router_aux_loss_coef
+        self.shared_intermediate_size = shared_intermediate_size
 
         super().__init__(
             pad_token_id=pad_token_id,
