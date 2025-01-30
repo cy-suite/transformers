@@ -2933,6 +2933,7 @@ else:
     )
     _import_structure["models.modernbert"].extend(
         [
+            "ModernBertForCausalLM",
             "ModernBertForMaskedLM",
             "ModernBertForSequenceClassification",
             "ModernBertForTokenClassification",
@@ -7734,6 +7735,7 @@ if TYPE_CHECKING:
             MobileViTV2PreTrainedModel,
         )
         from .models.modernbert import (
+            ModernBertForCausalLM,
             ModernBertForMaskedLM,
             ModernBertForSequenceClassification,
             ModernBertForTokenClassification,
